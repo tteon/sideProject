@@ -1,4 +1,6 @@
-# `DGL` tutorial _ wsdm
+# `DGL` tutorial _ WSDM
+
+본 글은 https://github.com/dglai/WSDM21-Hands-on-Tutorial 입니다. 
 
 
 
