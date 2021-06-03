@@ -377,13 +377,51 @@ def evaluate(emb, label, train_nids, valid_nivds, test_nids):
 ### Defining Training Loop
 
 ```python
-model = Model(node_features.shape[1], 128).to(device)predictor = DotPredictor().to(device) ## dot-productopt = torch.optim.Adam(list(model.parameters()) + list(predictor.parameters())) ## predictior 
+model = Model(node_features.shape[1], 128).to(device)
+predictor = DotPredictor().to(device) ## dot-product
+opt = torch.optim.Adam(list(model.parameters()) + list(predictor.parameters())) ## predictior 
 ```
 
 
 
 ```python
-import tqdmimport sklearn.metricsbest_accuracy = 0best_model_path = 'model.pt'for epoch in range(1):    with tqdm.tqdm(train_dataloader) as tq:        for step, (input_nodes, pos_graph, neg_graph, mfgs) in enumerate(tq):            # feature copy from CPU to GPU takes place here            inputs = mfgs[0].srcdata['feat'] ## graph (raw data)            outputs = model(mfgs, inputs) ## node representation            pos_score = predictor(pos_graph, outputs) ##             neg_score = predictor(neg_graph, outputs) ##             score = torch.cat([pos_score, neg_score])             label = torch.cat([torch.ones_like(pos_score), torch.zeros_like(neg_score)])            loss = F.binary_cross_entropy_with_logits(score, label)            opt.zero_grad()            loss.backward()            opt.step()            tq.set_postfix({'loss': '%.03f' % loss.item()}, refresh=False)            if (step + 1) % 500 == 0:                model.eval()                emb = inference(model, graph, node_features)                valid_acc, test_acc = evaluate(emb, node_labels, train_nids, valid_nids, test_nids)                print('Epoch {} Validation Accuracy {} Test Accuracy {}'.format(epoch, valid_acc, test_acc))                if best_accuracy < valid_acc:                    best_accuracy = valid_acc                    torch.save(model.state_dict(), best_model_path)                model.train()                # Note that this tutorial do not train the whole model to the end.                break
+import tqdm
+import sklearn.metrics
+
+best_accuracy = 0
+best_model_path = 'model.pt'
+for epoch in range(1):
+    with tqdm.tqdm(train_dataloader) as tq:
+        for step, (input_nodes, pos_graph, neg_graph, mfgs) in enumerate(tq):
+            # feature copy from CPU to GPU takes place here
+            inputs = mfgs[0].srcdata['feat'] ## graph (raw data)
+
+            outputs = model(mfgs, inputs) ## node representation
+            pos_score = predictor(pos_graph, outputs) ## 
+            neg_score = predictor(neg_graph, outputs) ## 
+
+            score = torch.cat([pos_score, neg_score]) 
+            label = torch.cat([torch.ones_like(pos_score), torch.zeros_like(neg_score)])
+            loss = F.binary_cross_entropy_with_logits(score, label)
+
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+
+            tq.set_postfix({'loss': '%.03f' % loss.item()}, refresh=False)
+
+            if (step + 1) % 500 == 0:
+                model.eval()
+                emb = inference(model, graph, node_features)
+                valid_acc, test_acc = evaluate(emb, node_labels, train_nids, valid_nids, test_nids)
+                print('Epoch {} Validation Accuracy {} Test Accuracy {}'.format(epoch, valid_acc, test_acc))
+                if best_accuracy < valid_acc:
+                    best_accuracy = valid_acc
+                    torch.save(model.state_dict(), best_model_path)
+                model.train()
+
+                # Note that this tutorial do not train the whole model to the end.
+                break
 ```
 
 
@@ -499,7 +537,18 @@ Module(layer) 구성이 끝나고 Modeling 을 해준다 .
 
 
 ```python
-class Model(nn.Module):    def __init__(self, in_feats, h_feats, num_classes):        super(Model, self).__init__()        self.conv1 = SAGEConv(in_feats, h_feats)        self.conv2 = SAGEConv(h_feats, num_classes)                # g is graph , in_feat is node-feature    def forward(self, g, in_feat):        h = self.conv1(g, in_feat)        h = F.relu(h)        h = self.conv2(g, h)        return h
+class Model(nn.Module):
+    def __init__(self, in_feats, h_feats, num_classes):
+        super(Model, self).__init__()
+        self.conv1 = SAGEConv(in_feats, h_feats)
+        self.conv2 = SAGEConv(h_feats, num_classes)
+        
+        # g is graph , in_feat is node-feature
+    def forward(self, g, in_feat):
+        h = self.conv1(g, in_feat)
+        h = F.relu(h)
+        h = self.conv2(g, h)
+        return h
 ```
 
 
@@ -655,6 +704,301 @@ In short, DGL will group the nodes by their in-degrees, and for each group DGL s
 
 
 
+
+
+
+# Link Predict
+
+This tutorial은 어떻게 GNN이 link prediction task를 위해 적용하는지에 대해 배워보고자 함. i.e. 그래프 내의 임의의 2개 node간에 edge가 존재할지 안할지 예측
+
+## Overview of Link Prediction with GNN
+
+social recommendation, item recommendation, knowledge graph completion 와 같은 application 은 대다수 link prediction으로 구성되어 있음. 두개의 특정 노드사이간에 edge가 형성될지 안될지에 대한 예측. 본 튜토리얼은 citing 할지 cited 인제 애대 2개의 페이퍼간 의 관계에 대해 예측해보고자 함.
+
+This tutorial formulates the link prediction problem as a binary classification problem as follows;
+
+- 그래프 내의 실제 존재하고 있는 edges는 positive example로 간주함.
+- node 쌍에서 edge가 존재하고 있지 않는 것을 sampling 함. 이걸 negative example.
+- 앞서 나눈 positive example과 negative example을 training set 과 test set으로 나누어줌.
+- 최종적으로 모델 성능을 평가하기 위해 binary classification 성능지표인 AUC를 활용하여 평가함. 
+
+In some domains such as large-scale recommender systems or information retrieval, you may favor metrics that emphasize good performance of top-K predictions.
+
+## Loading graph and features
+
+
+
+## Prepare training and testing sets
+
+이 튜토리얼은 test set에 있는 10% 만을 랜덤으로 추출하고 남은 것을 training set으로 가정. 이 때 학습시킬 negative sample 도 필요한데 len(positive samples) == len(negative samples) 가 되어야함.
+
+```python
+# split edge set for training andd testing
+u, v = g.edges()
+
+eids = np.arange(g.number_of_edges())
+eids = np.random.permutation(eids)  ## permutation 
+
+'''numpy.random.permutation(x)
+Randomly permute a sequence, or return a permuted range.
+
+Parameters
+x ; int or array_like 
+
+Returns
+out ; ndarray
+'''
+test_size = int(len(eids) * 0.1)
+train_size = g.number_of_edges() - test_size
+
+test_pos_u, test_pos_v = u[eids[:test_size]], v[eids[:test_size]]
+train_pos_u , train_pos_v = u[eids[test_size:], v[eids[test_size:]]]
+
+
+## Negative Sampling
+
+### 자주 헷갈리는 부분 아래 프로세스는 adjacency matrix 를 만든다.
+### 만든 matrix 에서 1을 빼면 neg된 adjacency matrix 로 만들어짐. 
+### neg_u, neg_v 여기에서 u는 source , v는 destination을 의미하는거라 생각됨.
+
+# Find all negative edges and split them for training and testing
+adj = sp.coo_matrix((np.ones(len(u)), (u.numpy(), v.numpy())))
+'''scipy.sparse.coo_matrix
+A sparse matrix in COOrdinate format.
+
+Also known as the 'ijv' or 'triplet' format.
+
+Example
+coo.matrix((3,4), dtype=np.int8).toarray()
+array([[0,0,0,0],
+		[0,0,0,0],
+		[0,0,0,0]], dtype=int8)
+'''
+## adj neg를 만드는 과정 
+adj_neg = 1 - adj.todense() - np.eye(g.number_of_nodes())
+## adj.todense()는 adjacency를 의미 ! (위 코드에서 adj 생성시 u.numpy(), v.numpy() 형식으로 만들어서 matrix화 했음!) 
+## 즉, adj_neg 는 negative 
+neg_u , neg_v = np.where(adj_neg != 0)
+
+neg_eids = np.random.choice(len(neg_u), g.number_of_edges() // 2)
+
+test_neg_u , test_neg_v = neg_u[neg_eids[:test_size]], neg_v[neg_eids[:test_size]]
+train_neg_u , train_neg_v = neg_u[neg_eids[test_size:]], neg_v[neg_eids[test_size:]]
+
+```
+
+** 윗 형식과 같음. 
+
+![image-20210603180021370](C:\Users\user\AppData\Roaming\Typora\typora-user-images\image-20210603180021370.png)
+
+** 각각의 element 에 대한 
+
+![image-20210603181553695](C:\Users\user\AppData\Roaming\Typora\typora-user-images\image-20210603181553695.png)
+
+## Define a GraphSAGE model
+
+이전에 layer modeling 에 대해 작성하였으므로 중복되어 생략하겠음.
+
+결론적으로 모델은 edge score를 계산하고자 하는데 나타내는 function은 다양함 ( e.g. an MLp or a dot product)
+$$
+\hat y_{u~v} =f(h_u,h_v)
+$$
+
+
+## Positive graph, negative graph, and 'apply_edges'
+
+이전 tutorial 인 node classification 과 다르게 link prediction은 한 쌍의 노드가 필요함!
+
+DGL 은 앞선 한쌍의 노드를 각각의 graph에 존재하다고 가정함. 그리하여 link prediction 에서는 positive graph ( pos 로만 구성된 것) , negative graph ( neg 로만 구성된 것으로 나누어 진행). 두 그래프는 original graph으로부터 subset 된거임. 여기에 대해 언급한 이유는 node feature을 적용할때 좀 더 효용적으로 진행하고자 함. 
+
+
+
+```python
+# constructing the pos graph , the neg graph
+train_pos_g = dgl.graph((train_pos_u, train_pos_v), num_nodes=g.number_of_nodes())
+train_neg_g = dgl.graph((train_neg_u, train_neg_v), num_nodes=g.number_of_nodes())
+
+test_pos_g = dgl.graph((test_pos_u, test_pos_v), num_nodes=g.number_of_nodes())
+test_neg_g = dgl.graph((test_neg_u, test_neg_v), num_nodes=g.number_of_nodes())
+```
+
+The benefit of treating the pairs of nodes as a graph is that you can use the ``DGLGraph.apply_edges`` method, which conveniently computes new edge features based on the incident nodes’ features and the original edge features (if applicable).
+
+DGL provides a set of optimized builtin functions to compute new edge features based on the original node/edge features. For example, ``dgl.function.u_dot_v`` computes a dot product of the incident nodes’ representations for each edge.
+
+```python
+import dgl.function as fn
+
+calss DotPredictor(nn.Module):
+    def forward(self, g, h):
+        with g.local_scope():
+            g.ndata['h'] = h
+            # Compute a new edge feature named 'score' by dot-product
+            # between the source node feature 'h' and destination node feature 'h'.
+            g.apply_edges(fn.u_dot_v('h', 'h', 'score'))
+            # u_dot_v returns a 1-element vector for each edge so you need to squeeze it.
+            return g.edat['score'][:, 0]
+```
+
+
+
+```python
+class MLPPredictor(nn.Module):
+    def __init__(self, h_feats):
+        super().__init__()
+        self.W1 = nn.Linear(h_feats * 2, h_feats)
+        self.W2 = nn.Linear(h_feats, 1)
+        
+    def apply_edges(self, edges):
+        '''apply_edges
+        Computes a scalar score for each edge of the given graph.
+        
+        Parameters
+        ----
+        edges ; ''src'', ''dst'' and ''data'', 각각의 형태들은 사전형태로 저장되어짐.
+        
+        returns
+        ----
+        dict ; A dictionary of new edge features.
+        '''
+        h = torch.cat([edges.src['h'], edges.dst['h']], 1)
+        return {'score': self.W2(F.relu(self.W1(h))).squeeze(1)}
+    
+    def forward(self, g, h):
+        with g.local_scope():
+            g.ndata['h'] = h
+            g.apply_edges(self.apply_edges)
+            return g.edata['score']
+```
+
+** 되도록 dgl builtin function을 쓰는것을 권고드립니다 . speed and memory 측면에서 class에 맞게 최적화되어있기 때문에 그렇습니다.
+
+## Training loop
+
+node representation computation 과 edge score computation을 정의 한 이후에 모델 그리고 loss function 그리고 metric 을 지정해야합니다. 
+
+loss function 으로는 간단하게 binary cross entropy loss를 이용할 것임.
+$$
+L = - \sum_{u~v\in D}(y_{u~v}log(\hat y_{u~v})+(1-y_{u~v})log(1-\hat y_{u~v})))
+$$
+evaluation metric 으로는 AUC 를 사용할것임.
+
+
+
+```python
+model = GraphSAGE(train_g.ndata['feat'].shape[1], 16)
+# MLPPredictor 를 DotPredictor로 바꿀수도 있음.
+# pred = MLPPredictor(16)
+pred = DotPredictor()
+
+def compute_loss(pos_score, neg_score):
+    scores = torch.cat([pos_score, neg_score])
+    labels = torch.cat([torch.ones(pos_score.shape[0]), torch.zeros(neg_score.shape[0])])
+    return F.binary_corss_entropy_with_logits(scores, labels)
+
+def compute_auc(pos_score, neg_score):
+    scores = torch.cat([pos_score, neg_score]).numpy()
+    labels = torch.cat(
+    	[torch.ones(pos_score.shape[0]), torch.zeros(neg_score.shape[0])]).numpy()
+    return roc_auc_score(albels, scores)
+```
+
+
+
+```python
+optimizer = torch.optim.Adam(itertools.chain(model.parameters(), pred.parameters()), lr=0.001)
+
+all_logits = []
+for e in range(100):
+    # forward
+    h = model(train_g, train_g.ndata['feat'])
+    pos_score = pred(train_pos_g, h)
+    neg_score = pred(train_neg_g, h)
+    loss = compute_loss(pos_score, neg_score)
+
+    # backward
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+    
+    if e % 5 == 0:
+        print(f'In epoch {e}, loss: {loss})
+              
+from sklearn.metrics import roc_auc_score
+with torch.no_grad():
+     pos_score = pred(test_pos_g, h)
+     neg_score = pred(test_neg_g, h)
+     print('AUC', compute_auc(pos_score, neg_score))
+```
+
+
+
+
+
+# Load_data
+
+
+
+## Make your own dataset
+
+DGLDataset Object Overview
+
+graph dataset은 dgl.data.DGLDataset 클래스로부터 상속받습니다 그리고 다음과 같은 method(argument)를 갖습니다.
+
+- ''getitem(self,i)'' ; i번째 데이터셋를 가져와 single DGL graph 에 포함시키고 때때로 label 도함.
+- ''len(self)'' ; datasets 의 갯수
+- ''process(self)'' ; disk 로 부터 raw data를 불러들이고 process함..
+
+```python
+import dgl
+from dgl.data import DGLDataset
+import torch
+import os
+
+class KarateClubDataset(DGLDataset):
+    def __init__(self):
+        super().__init__(name='karate_club')
+        
+    def process(self):
+        nodes_data = pd.read_csv('./members.csv')
+        edges_data = pd.read_csv('./interactions.csv')
+        node_features = torch.from_numpy(nodes_data['Age'].to_numpy())
+        node_labels = torch.from_numpy(nodes_data['Club'].astype('category').cat.codes.to_numpy())
+        edge_features = torch.from_numpy(edges_data['Weight'].to_numpy())
+        edges_src = torch.from_numpy(edges_data['Src'].to_numpy())
+        edges_dst = torch.from_numpy(edges_data['Dst'].to_numpy())
+        
+        self.graph = dgl.graph((edges_src, edges_dst), num_nodes=nodes_data.shape[0])
+        self.graph.ndata['feat'] = node_features
+        self.graph.ndata['label'] = node_labels
+        self.graph.edata['weight'] = edge_features
+        
+        # If your dataset is a node classification dataset, you will need to assign
+        # masks indicating whether a node belongs to training, validation, and test set.
+        n_nodes = nodes_data.shape[0]
+        n_train = int(n_nodes * 0.6)
+        n_val = int(n_nodes * 0.2)
+        train_mask = torch.zeros(n_nodes, dtype=torch.bool)
+        val_mask = torch.zeros(n_nodes, dtype=torch.bool)
+        test_mask = torch.zeros(n_nodes, dtype=torch.bool)
+        train_mask[:n_train] = True
+        val_mask[n_train:n_train + n_val] = True
+        test_mask[n_train + n_val:] = True
+        self.graph.ndata['train_mask'] = train_mask
+        self.graph.ndata['val_mask'] = val_mask
+        self.graph.ndata['test_mask'] = test_mask
+        
+    def __getitem__(self, i):
+        return self.graph
+    
+    def __len__(self):
+        return 1
+
+dataset = KarateClubDataset()
+graph = dataset[0]
+
+print(graph)
+```
 
 
 
