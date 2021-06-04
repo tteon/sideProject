@@ -1,4 +1,4 @@
-# 0604 _ Fraud Detection ; Using Relational Graph Learning to Detect Collusion
+Fraud Detection ; Using Relational Graph Learning to Detect Collusion
 
 
 
