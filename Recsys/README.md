@@ -1,3 +1,5 @@
+![result](image/results)
+
 This project consists of 3 procedure.
 
 graph construbtion
