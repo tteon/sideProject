@@ -1,4 +1,4 @@
-![result](image/results)
+![result](https://github.com/tteon/Graph-Embedding/blob/master/Recsys/image/results.jpg)
 
 This project consists of 3 procedure.
 
