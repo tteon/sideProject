@@ -127,9 +127,10 @@ Design Principles
 
 
 Message Passing Graph Neural Networks
-\begin{align*}
+
+$$
 h^{(l+1)}_i = Update_{\theta}(h^{(l)}_i \bigoplus   MESSAGE_{\theta}(h^{(l)}_j, h^{(l)}_i, e_{j,i}))
-\end{align*}
+$$
 
 
 - PyG supports mini-batching on many small graphs
