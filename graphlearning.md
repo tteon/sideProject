@@ -166,9 +166,8 @@ Heterogeneous Graph Support
 - Heterogeneous Graph Neural Networks
 
 A homogeneous GNN can be converted to a heterogeneous one by learning distinct parameters for each individual edge type;
-$$
-h^{(l+1)}_i = \sum_{r\in R}GNN^{(r)}_\theta(h^{(l)}_i, \{{h^{(l)}_j}:j \in N^{(r)}(i)\})
-$$
+
+$h^{(l+1)}_i = \sum_{r\in R}GNN^{(r)}_\theta(h^{(l)}_i, \{{h^{(l)}_j}:j \in N^{(r)}(i)\})$
 
 
 ![../_images/to_hetero.svg](https://pytorch-geometric.readthedocs.io/en/latest/_images/to_hetero.svg)
@@ -179,9 +178,7 @@ Rapid growth in the number of parameters w.r.t. number of relations may lead to 
 
 Basis-decomposition for regularization
 
-$$
-h^{(l+1)}_i = \sum_{r\in R}GNN^{(r)}_\theta(h^{(l)}_i, \{{a^{(l)}_{r,b} \times h^{(l)}_j}:j \in N^{(r)}(i)\})
-$$
+$h^{(l+1)}_i = \sum_{r\in R}GNN^{(r)}_\theta(h^{(l)}_i, \{{a^{(l)}_{r,b} \times h^{(l)}_j}:j \in N^{(r)}(i)\})$
 
 where a^{(l)}_{r,b} means that the **Relational-depend trainable coefficients**
 
