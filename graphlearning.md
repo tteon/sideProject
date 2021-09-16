@@ -127,7 +127,9 @@ Design Principles
 
 
 Message Passing Graph Neural Networks
-$h^{(l+1)}_i = Update_{\theta}(h^{(l)}_i \bigoplus   MESSAGE_{\theta}(h^{(l)}_j, h^{(l)}_i, e_{j,i}))$
+\begin
+h^{(l+1)}_i = Update_{\theta}(h^{(l)}_i \bigoplus   MESSAGE_{\theta}(h^{(l)}_j, h^{(l)}_i, e_{j,i}))
+\end
 
 
 - PyG supports mini-batching on many small graphs
@@ -166,8 +168,9 @@ Heterogeneous Graph Support
 - Heterogeneous Graph Neural Networks
 
 A homogeneous GNN can be converted to a heterogeneous one by learning distinct parameters for each individual edge type;
-
+'''math
 $h^{(l+1)}_i = \sum_{r\in R}GNN^{(r)}_\theta(h^{(l)}_i, \{{h^{(l)}_j}:j \in N^{(r)}(i)\})$
+'''
 
 
 ![../_images/to_hetero.svg](https://pytorch-geometric.readthedocs.io/en/latest/_images/to_hetero.svg)
