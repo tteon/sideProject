@@ -128,6 +128,10 @@ Design Principles
 
 Message Passing Graph Neural Networks
 
+<script type="text/x-mathjax-config">
+MathJax.Hub.Config({tex2jax: {inlineMath: [['$','$'], ['\\(','\\)']]}});
+</script>
+
 $$
 h^{(l+1)}_i = Update_{\theta}(h^{(l)}_i \bigoplus   MESSAGE_{\theta}(h^{(l)}_j, h^{(l)}_i, e_{j,i}))
 $$
